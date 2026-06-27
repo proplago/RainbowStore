@@ -49,7 +49,7 @@
     mtAttach(); setInterval(mtAttach, 2500);
 
     // ===== Auto-actualizador: avisa cuando hay versión nueva publicada (vence el caché) =====
-    var APP_BUILD="20260627-144122";
+    var APP_BUILD="20260627-163433";
     var upd=document.createElement("div");
     upd.style.cssText="position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:2147483001;font:700 12px/1.2 -apple-system,system-ui,sans-serif;padding:9px 15px;border-radius:999px;background:#7A4FE0;color:#fff;box-shadow:0 8px 22px rgba(73,40,120,.35);cursor:pointer;display:none;text-align:center";
     upd.textContent="🔄 Nueva versión · toca para actualizar";
@@ -88,8 +88,8 @@
 
     // ===== Fotos de venta fuera del estado: IndexedDB local + RTDB rainbow/photos =====
     var PHOTO_PATH="rainbow/photos", _idb=null, _stored={}, _rehyd=false;
-    function idbReady(){ return new Promise(function(res){ if(_idb) return res(_idb); try{ var rq=indexedDB.open("rbphotos",1); rq.onupgradeneeded=function(){ try{ rq.result.createObjectStore("photos"); }catch(e){} }; rq.onsuccess=function(){ _idb=rq.result; res(_idb); }; rq.onerror=function(){ res(null); }; }catch(e){ res(null); } }); }
-    function idbGet(id){ return idbReady().then(function(d){ return new Promise(function(res){ if(!d) return res(null); try{ var r=d.transaction("photos","readonly").objectStore("photos").get(id); r.onsuccess=function(){ res(r.result||null); }; r.onerror=function(){ res(null); }; }catch(e){ res(null); } }); }); }
+    function idbReady(){ if(_idb) return Promise.resolve(_idb); return new Promise(function(res){ var done=false; function fin(v){ if(done) return; done=true; res(v); } try{ var rq=indexedDB.open("rbphotos",1); rq.onupgradeneeded=function(){ try{ rq.result.createObjectStore("photos"); }catch(e){} }; rq.onsuccess=function(){ _idb=rq.result; fin(_idb); }; rq.onerror=function(){ fin(null); }; rq.onblocked=function(){ fin(null); }; }catch(e){ fin(null); } setTimeout(function(){ fin(null); },1500); }); }
+    function idbGet(id){ return Promise.race([ idbReady().then(function(d){ return new Promise(function(res){ if(!d) return res(null); try{ var r=d.transaction("photos","readonly").objectStore("photos").get(id); r.onsuccess=function(){ res(r.result||null); }; r.onerror=function(){ res(null); }; }catch(e){ res(null); } }); }), new Promise(function(res){ setTimeout(function(){ res(null); },1500); }) ]); }
     function idbPut(id,val){ idbReady().then(function(d){ if(!d) return; try{ d.transaction("photos","readwrite").objectStore("photos").put(val,id); }catch(e){} }); }
     function photoRef(id){ return (ready&&ref)?ref.root.child(PHOTO_PATH+"/"+id):null; }
     function putPhoto(id,dataURL){ idbPut(id,dataURL); var pr=photoRef(id); if(pr&&!_stored[id]){ _stored[id]=1; try{ pr.set(dataURL); }catch(e){} } }
