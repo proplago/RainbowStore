@@ -23,7 +23,7 @@
       try{
         if(!D||!D.prototype||D.prototype.__rbHooked) return;
         var orig=D.prototype.setState; if(typeof orig!=="function") return;
-        D.prototype.setState=function(){ if(this && this.state && this.state.products && this.state.sales!==undefined){ APP=this; } return orig.apply(this,arguments); };
+        D.prototype.setState=function(){ if(this && this.state && this.state.products && this.state.sales!==undefined){ APP=this; try{ window.APP=this; }catch(e){} } return orig.apply(this,arguments); };
         D.prototype.__rbHooked=true;
       }catch(e){}
     }
