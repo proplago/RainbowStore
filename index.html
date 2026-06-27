@@ -48,6 +48,24 @@
     mtog.onclick=function(){ sset("tpop:_showMargin", mtShown()?"0":"1"); mtPaint(); try{ if(window.APP&&window.APP.setState){ window.APP.setState({tab:window.APP.state.tab}); } }catch(e){} };
     mtAttach(); setInterval(mtAttach, 2500);
 
+    // ===== Auto-actualizador: avisa cuando hay versión nueva publicada (vence el caché) =====
+    var APP_BUILD="20260627-143325";
+    var upd=document.createElement("div");
+    upd.style.cssText="position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:2147483001;font:700 12px/1.2 -apple-system,system-ui,sans-serif;padding:9px 15px;border-radius:999px;background:#7A4FE0;color:#fff;box-shadow:0 8px 22px rgba(73,40,120,.35);cursor:pointer;display:none;text-align:center";
+    upd.textContent="🔄 Nueva versión · toca para actualizar";
+    upd.onclick=function(){ try{ location.replace(location.pathname+"?u="+Date.now()); }catch(e){ location.reload(); } };
+    function updShow(){ if(!upd.isConnected && document.documentElement){ document.documentElement.appendChild(upd); } upd.style.display="block"; }
+    function checkVer(){
+      if(APP_BUILD==="__RB"+"VER__") return; // sin estampar (dev local): no checar
+      try{
+        fetch("version.txt?cb="+Date.now(), {cache:"no-store"}).then(function(r){ return r.ok?r.text():null; }).then(function(t){
+          if(t && t.trim() && t.trim()!==APP_BUILD){ updShow(); }
+        }).catch(function(){});
+      }catch(e){}
+    }
+    checkVer(); setInterval(checkVer, 90000);
+    document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="visible") checkVer(); });
+
     var ready=false, ref=null, firstSnap=true, pendingPush=false, pushTimer=null, liveTimer=null;
     function sheetOpen(){ var ins=document.querySelectorAll("input,textarea"); for(var i=0;i<ins.length;i++){ var el=ins[i]; if(el.type==="file") continue; var r=el.getBoundingClientRect(); if(r.width>0 && r.height>0 && el.offsetParent!==null) return true; } return false; }
     function liveRefresh(){ if(sheetOpen()){ showPill("🔄 Datos nuevos · toca para actualizar",{click:function(){ location.reload(); }}); clearInterval(liveTimer); liveTimer=setInterval(function(){ if(!sheetOpen()){ clearInterval(liveTimer); location.reload(); } },1200); return; } location.reload(); }
