@@ -42,7 +42,7 @@
     var ready=false, ref=null, firstSnap=true, pendingPush=false, pushTimer=null, liveTimer=null;
     function sheetOpen(){ var ins=document.querySelectorAll("input,textarea"); for(var i=0;i<ins.length;i++){ var el=ins[i]; if(el.type==="file") continue; var r=el.getBoundingClientRect(); if(r.width>0 && r.height>0 && el.offsetParent!==null) return true; } return false; }
     function liveRefresh(){ if(sheetOpen()){ showPill("🔄 Datos nuevos · toca para actualizar",{click:function(){ location.reload(); }}); clearInterval(liveTimer); liveTimer=setInterval(function(){ if(!sheetOpen()){ clearInterval(liveTimer); location.reload(); } },1200); return; } location.reload(); }
-    localStorage.setItem=function(k,v){ _set(k,v); if(typeof k==="string" && k.indexOf("tpop:")===0 && k.indexOf("tpop:_")!==0){ schedulePush(); } };
+    localStorage.setItem=function(k,v){ if(k==="tpop:sales"){ try{ v=externalizeSales(v); }catch(e){} } _set(k,v); if(typeof k==="string" && k.indexOf("tpop:")===0 && k.indexOf("tpop:_")!==0){ schedulePush(); } };
 
     function snapshotObj(){ var o={}; DATA_KEYS.forEach(function(k){ var v=g(k); if(v!=null) o[k]=v; }); return o; }
     function localHasSales(){ try{ var a=JSON.parse(g("tpop:sales")||"[]"); return Array.isArray(a)&&a.length>0; }catch(e){ return false; } }
@@ -58,6 +58,35 @@
         APP.setState(patch); return true;
       }catch(e){ return false; }
     }
+
+    // ===== Fotos de venta fuera del estado: IndexedDB local + RTDB rainbow/photos =====
+    var PHOTO_PATH="rainbow/photos", _idb=null, _stored={}, _rehyd=false;
+    function idbReady(){ return new Promise(function(res){ if(_idb) return res(_idb); try{ var rq=indexedDB.open("rbphotos",1); rq.onupgradeneeded=function(){ try{ rq.result.createObjectStore("photos"); }catch(e){} }; rq.onsuccess=function(){ _idb=rq.result; res(_idb); }; rq.onerror=function(){ res(null); }; }catch(e){ res(null); } }); }
+    function idbGet(id){ return idbReady().then(function(d){ return new Promise(function(res){ if(!d) return res(null); try{ var r=d.transaction("photos","readonly").objectStore("photos").get(id); r.onsuccess=function(){ res(r.result||null); }; r.onerror=function(){ res(null); }; }catch(e){ res(null); } }); }); }
+    function idbPut(id,val){ idbReady().then(function(d){ if(!d) return; try{ d.transaction("photos","readwrite").objectStore("photos").put(val,id); }catch(e){} }); }
+    function photoRef(id){ return (ready&&ref)?ref.root.child(PHOTO_PATH+"/"+id):null; }
+    function putPhoto(id,dataURL){ idbPut(id,dataURL); var pr=photoRef(id); if(pr&&!_stored[id]){ _stored[id]=1; try{ pr.set(dataURL); }catch(e){} } }
+    function getPhoto(id){ return idbGet(id).then(function(v){ if(v) return v; var pr=photoRef(id); if(!pr) return null; try{ return pr.once("value").then(function(s){ var val=s.val(); if(val){ idbPut(id,val); _stored[id]=1; } return val||null; }).catch(function(){ return null; }); }catch(e){ return null; } }); }
+    function externalizeSales(json){
+      var arr; try{ arr=JSON.parse(json); }catch(e){ return json; }
+      if(!Array.isArray(arr)) return json;
+      var changed=false;
+      for(var i=0;i<arr.length;i++){ var s=arr[i]; if(s && typeof s.photo==="string" && s.photo.indexOf("data:")===0){ putPhoto(s.id, s.photo); arr[i]=Object.assign({},s,{photo:"",ph:1}); changed=true; } }
+      return changed? JSON.stringify(arr) : json;
+    }
+    function rehydratePhotos(){
+      if(_rehyd || !APP || !APP.state || !Array.isArray(APP.state.sales)) return;
+      var need=APP.state.sales.filter(function(s){ return s && s.ph && (!s.photo || String(s.photo).indexOf("data:")!==0); });
+      if(!need.length) return;
+      _rehyd=true;
+      Promise.all(need.map(function(s){ return getPhoto(s.id).then(function(p){ return {id:s.id,p:p}; }); })).then(function(rs){
+        var map={}; rs.forEach(function(r){ if(r.p) map[r.id]=r.p; });
+        if(APP&&APP.setState&&Object.keys(map).length){ var ns=APP.state.sales.map(function(s){ return (s&&map[s.id])?Object.assign({},s,{photo:map[s.id]}):s; }); APP.setState({sales:ns}); }
+        _rehyd=false;
+      }).catch(function(){ _rehyd=false; });
+    }
+    function flushPhotos(){ try{ var arr=JSON.parse(g("tpop:sales")||"[]"); if(!Array.isArray(arr)) return; arr.forEach(function(s){ if(s&&s.ph&&!_stored[s.id]){ idbGet(s.id).then(function(p){ if(p) putPhoto(s.id,p); }); } }); }catch(e){} }
+    setInterval(rehydratePhotos, 1500);
 
     function doPush(){
       if(!ready||!ref) return;
@@ -90,6 +119,7 @@
         db.ref(".info/connected").on("value",function(s){ if(s.val()===true){ showPill("☁️ Sincronizado",{fade:1500}); } else { showPill("⚠️ Sin conexión"); } });
         ref.on("value",onSnap,function(){ showPill("⚠️ Sin conexión"); });
         if(pendingPush){ pendingPush=false; schedulePush(); }
+        idbReady(); flushPhotos(); rehydratePhotos();
       }catch(e){ showPill("⚠️ Sync no disponible",{fade:3000}); }
     }
     init(0);
