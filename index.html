@@ -48,8 +48,14 @@
     mtog.onclick=function(){ sset("tpop:_showMargin", mtShown()?"0":"1"); mtPaint(); try{ if(window.APP&&window.APP.setState){ window.APP.setState({tab:window.APP.state.tab}); } }catch(e){} };
     mtAttach(); setInterval(mtAttach, 2500);
 
+    // ===== iPad/desktop responsive: el bundler reemplaza el documento, así que el <style> se inyecta y re-adjunta =====
+    var rbCss='@media (min-width:720px){div[style^="max-width: 520px"],div[style^="max-width:520px"]{max-width:760px!important}div[style*="grid-template-columns: 1fr 1fr; gap: 12px"],div[style*="grid-template-columns:1fr 1fr;gap:12px"]{grid-template-columns:1fr 1fr 1fr!important}}@media (min-width:1040px){div[style^="max-width: 520px"],div[style^="max-width:520px"]{max-width:940px!important}div[style*="grid-template-columns: 1fr 1fr; gap: 12px"],div[style*="grid-template-columns:1fr 1fr;gap:12px"]{grid-template-columns:repeat(4,1fr)!important}}';
+    var rbStyle=document.createElement("style"); rbStyle.id="rb-responsive"; rbStyle.textContent=rbCss;
+    function rbStyleAttach(){ try{ if(!rbStyle.isConnected){ (document.head||document.documentElement).appendChild(rbStyle); } }catch(e){} }
+    rbStyleAttach(); setInterval(rbStyleAttach, 1500);
+
     // ===== Auto-actualizador: avisa cuando hay versión nueva publicada (vence el caché) =====
-    var APP_BUILD="20260628-065656";
+    var APP_BUILD="20260628-070504";
     var upd=document.createElement("div");
     upd.style.cssText="position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:2147483001;font:700 12px/1.2 -apple-system,system-ui,sans-serif;padding:9px 15px;border-radius:999px;background:#7A4FE0;color:#fff;box-shadow:0 8px 22px rgba(73,40,120,.35);cursor:pointer;display:none;text-align:center";
     upd.textContent="🔄 Nueva versión · toca para actualizar";
