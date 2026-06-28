@@ -213,18 +213,19 @@
     cardOverlay.addEventListener("click",function(e){ if(e.target===cardOverlay) cardOverlay.style.display="none"; });
     function showCardPreview(dataUrl){ if(!cardOverlay.isConnected) document.documentElement.appendChild(cardOverlay); cardOverlay.innerHTML='<div style="background:#fff;border-radius:20px;padding:16px;max-width:340px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.4)"><div style="font-family:Fredoka,sans-serif;font-weight:700;font-size:18px;color:#2B1B3D;margin:2px 0 10px">✅ ¡Cobrado!</div><img src="'+dataUrl+'" style="width:100%;border-radius:12px;display:block"><div style="display:flex;gap:8px;margin-top:12px"><button id="rgCardClose" style="flex:1;border:2px solid #e3d6ee;background:#fff;border-radius:12px;padding:12px;font-family:Fredoka,sans-serif;font-weight:700;color:#5E36C2;cursor:pointer">Cerrar</button><button id="rgCardShare" style="flex:1.4;border:none;border-radius:12px;padding:12px;font-family:Fredoka,sans-serif;font-weight:700;color:#fff;background:linear-gradient(150deg,#7A4FE0,#FF5DA2);cursor:pointer">💜 Compartir</button></div></div>'; cardOverlay.style.display="flex"; cardOverlay.querySelector("#rgCardClose").onclick=function(){ cardOverlay.style.display="none"; }; cardOverlay.querySelector("#rgCardShare").onclick=function(){ shareCardData(dataUrl); }; }
 
-    // Intercepta el botón nativo "Escanear para vender / Modo caja registradora" → abre la caja manual
+    // Intercepta el botón nativo "Escanear para vender" → caja manual. Y arregla "Agregar producto" (viene sin handler en el export).
     document.addEventListener("click", function(e){
       var node=e.target;
       for(var i=0;i<6 && node;i++){
         var t=(node.textContent||"");
         if(t.length<150 && (/Escanear para vender/.test(t) || /Modo caja registradora/.test(t))){ try{ e.preventDefault(); e.stopPropagation(); if(e.stopImmediatePropagation) e.stopImmediatePropagation(); }catch(_){} regOpen(); return; }
+        if(node.tagName==="BUTTON" && t.length<60 && /agregar\s*producto/i.test(t.replace(/\s+/g," ")) && typeof node.onclick!=="function"){ try{ if(window.APP&&window.APP.openAdd){ window.APP.openAdd(); } }catch(_){} return; }
         node=node.parentElement;
       }
     }, true);
 
     // ===== Auto-actualizador: avisa cuando hay versión nueva publicada (vence el caché) =====
-    var APP_BUILD="20260628-093516";
+    var APP_BUILD="20260628-100426";
     var upd=document.createElement("div");
     upd.style.cssText="position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:2147483001;font:700 12px/1.2 -apple-system,system-ui,sans-serif;padding:9px 15px;border-radius:999px;background:#7A4FE0;color:#fff;box-shadow:0 8px 22px rgba(73,40,120,.35);cursor:pointer;display:none;text-align:center";
     upd.textContent="🔄 Nueva versión · toca para actualizar";
