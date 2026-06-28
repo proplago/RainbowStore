@@ -72,14 +72,8 @@
           _save.call(self); rbToast("Producto agregado ✓","Sincronizado en la nube");
         };
       }
-      // Borrar venta: confirma antes de eliminar (devuelve el stock).
-      var _del=proto.deleteSale;
-      if(typeof _del==="function"){
-        proto.deleteSale=function(saleId){
-          var self=this, sale=(self.state&&self.state.sales||[]).filter(function(s){return s.id===saleId;})[0];
-          confirmBox({ danger:true, title:"¿Borrar esta venta?", emoji:"🗑️", okLabel:"Sí, borrar", msg:(sale?("<b>"+rbEsc(sale.name)+"</b> ×"+(sale.qty||1)+"<br>Se devolverá al inventario."):"Se devolverá al inventario."), onOk:function(){ _del.call(self, saleId); } });
-        };
-      }
+      // Borrar venta ya tiene su propia hoja de confirmación nativa (openDelSale → 'delsale' → deleteSale),
+      // así que NO la envolvemos aquí (evita doble "¿estás seguro?").
       proto.__rbConfirmed=true;
     }
 
@@ -291,7 +285,7 @@
     }, true);
 
     // ===== Auto-actualizador: avisa cuando hay versión nueva publicada (vence el caché) =====
-    var APP_BUILD="20260628-111513";
+    var APP_BUILD="20260628-111631";
     var upd=document.createElement("div");
     upd.style.cssText="position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:2147483001;font:700 12px/1.2 -apple-system,system-ui,sans-serif;padding:9px 15px;border-radius:999px;background:#7A4FE0;color:#fff;box-shadow:0 8px 22px rgba(73,40,120,.35);cursor:pointer;display:none;text-align:center";
     upd.textContent="🔄 Nueva versión · toca para actualizar";
