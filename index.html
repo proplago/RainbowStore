@@ -54,6 +54,24 @@
     function rbStyleAttach(){ try{ if(!rbStyle.isConnected){ (document.head||document.documentElement).appendChild(rbStyle); } }catch(e){} }
     rbStyleAttach(); setInterval(rbStyleAttach, 1500);
 
+    // ===== PWA (icono + nombre para "Agregar a inicio") — el bundler reemplaza el head, así que se inyecta =====
+    function pwaTag(sel, tag, attrs){ var el=document.head?document.head.querySelector(sel):null; if(el) return; el=document.createElement(tag); for(var k in attrs){ el.setAttribute(k, attrs[k]); } (document.head||document.documentElement).appendChild(el); }
+    function pwaInject(){ try{
+      if(document.title!=="Rainbow Store") document.title="Rainbow Store";
+      pwaTag('link[rel="manifest"]','link',{rel:"manifest",href:"manifest.json"});
+      pwaTag('link[rel="apple-touch-icon"]','link',{rel:"apple-touch-icon",href:"apple-touch-icon.png"});
+      pwaTag('meta[name="apple-mobile-web-app-capable"]','meta',{name:"apple-mobile-web-app-capable",content:"yes"});
+      pwaTag('meta[name="mobile-web-app-capable"]','meta',{name:"mobile-web-app-capable",content:"yes"});
+      pwaTag('meta[name="apple-mobile-web-app-status-bar-style"]','meta',{name:"apple-mobile-web-app-status-bar-style",content:"black-translucent"});
+      pwaTag('meta[name="apple-mobile-web-app-title"]','meta',{name:"apple-mobile-web-app-title",content:"Rainbow Store"});
+      pwaTag('meta[name="theme-color"]','meta',{name:"theme-color",content:"#7A4FE0"});
+    }catch(e){} }
+    pwaInject(); setInterval(pwaInject, 2000);
+
+    // ===== Renombra el botón nativo "Escanear para vender" → "Vender varios productos" (deja el subtítulo para la intercepción) =====
+    function rbRelabel(){ try{ var els=document.querySelectorAll("div,span"); for(var i=0;i<els.length;i++){ var el=els[i]; if(el.childElementCount===0){ var x=(el.textContent||"").trim(); if(x==="Escanear para vender"){ el.textContent="🛍️ Vender varios productos"; } else if(x==="Modo caja registradora · ¡cha-ching! 🔔"){ el.textContent="Toca o escanea · suma y cobra 🔔"; } } } }catch(e){} }
+    rbRelabel(); setInterval(rbRelabel, 600);
+
     // ===== Caja manual (Vender varios) — abre desde el botón nativo "Escanear para vender", con foto =====
     var REG={}, regPhoto=null;
     function _RM(n){ n=Math.round(n*100)/100; return "$"+(n%1===0? n.toFixed(0): n.toFixed(2)); }
@@ -77,40 +95,44 @@
     function regOpen(){ if(!regOverlay.isConnected) document.documentElement.appendChild(regOverlay); if(!regFile.isConnected) document.documentElement.appendChild(regFile); REG={}; regPhoto=null; regRender(); regOverlay.style.display="flex"; }
 
     // ----- Escáner de código de barras dentro de la caja (vende + asigna el código a un producto en tpop:codes) -----
-    var regStream=null, regScanRAF=null, regDetector=null, _scanLast=null, _scanLastTs=0;
+    var regStream=null, regScanRAF=null, regDetector=null, regZxingReader=null, _zxingP=null, _scanLast=null, _scanLastTs=0;
     function regCodeMap(){ try{ return JSON.parse(localStorage.getItem("tpop:codes")||"{}")||{}; }catch(e){ return {}; } }
     function regSaveCode(code, pid){ var m=regCodeMap(); m[code]=pid; try{ localStorage.setItem("tpop:codes", JSON.stringify(m)); }catch(e){} }
-    function regStopCam(){ try{ if(regScanRAF){ cancelAnimationFrame(regScanRAF); regScanRAF=null; } }catch(e){} try{ if(regStream){ regStream.getTracks().forEach(function(t){ t.stop(); }); regStream=null; } }catch(e){} }
+    function regStopCam(){ try{ if(regScanRAF){ cancelAnimationFrame(regScanRAF); regScanRAF=null; } }catch(e){} try{ if(regZxingReader){ regZxingReader.reset(); regZxingReader=null; } }catch(e){} try{ if(regStream){ regStream.getTracks().forEach(function(t){ t.stop(); }); regStream=null; } }catch(e){} }
+    function loadZXing(){ if(window.ZXing && window.ZXing.BrowserMultiFormatReader) return Promise.resolve(true); if(_zxingP) return _zxingP; _zxingP=new Promise(function(res){ var s=document.createElement("script"); s.src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"; s.onload=function(){ res(!!(window.ZXing && window.ZXing.BrowserMultiFormatReader)); }; s.onerror=function(){ res(false); }; (document.head||document.documentElement).appendChild(s); }); return _zxingP; }
+    function regTypeInput(){ regStopCam(); var body=scanOverlay.querySelector("#scBody"), msg=scanOverlay.querySelector("#scMsg"); if(msg) msg.textContent=""; if(!body) return; body.innerHTML='<div style="text-align:center;color:#fff;padding:14px"><div style="font-size:40px">⌨️</div><div style="margin:10px 0;font-size:14px;opacity:.85">Teclea el código de barras:</div><input id="scType" inputmode="numeric" placeholder="Código" style="width:80%;max-width:280px;padding:12px;border-radius:12px;border:none;font-size:18px;text-align:center"><button id="scTypeOk" style="margin:14px auto 0;display:block;border:none;border-radius:12px;padding:12px 22px;background:linear-gradient(150deg,#7A4FE0,#FF5DA2);color:#fff;font-family:Fredoka,sans-serif;font-weight:700;cursor:pointer">Usar código</button></div>'; var ok=scanOverlay.querySelector("#scTypeOk"); if(ok) ok.onclick=function(){ var val=(scanOverlay.querySelector("#scType").value||"").trim(); if(val) regOnCode(val); }; }
     function regAddUnit(pid){ var p=regProducts().filter(function(x){return x.id===pid;})[0]; if(p && (p.stock||0)>(REG[p.id]||0)){ REG[p.id]=(REG[p.id]||0)+1; } }
     var scanOverlay=document.createElement("div");
     scanOverlay.style.cssText="position:fixed;inset:0;z-index:2147483500;background:#1b0f2e;display:none;flex-direction:column;font-family:-apple-system,system-ui,sans-serif";
     function scanClose(){ regStopCam(); scanOverlay.style.display="none"; }
     async function regScanOpen(){
       if(!scanOverlay.isConnected) document.documentElement.appendChild(scanOverlay);
-      scanOverlay.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;color:#fff"><div style="font-family:Fredoka,sans-serif;font-weight:700;font-size:18px">📷 Escanear código</div><button id="scX" style="border:none;background:rgba(255,255,255,.18);color:#fff;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer">×</button></div><div id="scBody" style="flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden"></div><div id="scMsg" style="padding:12px 16px calc(14px + env(safe-area-inset-bottom));color:#fff;text-align:center;font-weight:700;font-size:14px"></div>';
+      scanOverlay.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;color:#fff"><div style="font-family:Fredoka,sans-serif;font-weight:700;font-size:18px">📷 Escanear código</div><button id="scX" style="border:none;background:rgba(255,255,255,.18);color:#fff;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer">×</button></div><div id="scBody" style="flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden"></div><div id="scMsg" style="padding:8px 16px;color:#fff;text-align:center;font-weight:700;font-size:14px"></div><div style="padding:0 16px calc(14px + env(safe-area-inset-bottom));text-align:center"><button id="scTypeBtn" style="border:none;background:rgba(255,255,255,.16);color:#fff;border-radius:999px;padding:9px 16px;font-weight:700;font-size:13px;cursor:pointer">⌨️ Mejor teclear el código</button></div>';
       scanOverlay.style.display="flex";
       scanOverlay.querySelector("#scX").onclick=scanClose;
+      var tb=scanOverlay.querySelector("#scTypeBtn"); if(tb) tb.onclick=regTypeInput;
       var body=scanOverlay.querySelector("#scBody"), msg=scanOverlay.querySelector("#scMsg");
-      if(!("BarcodeDetector" in window) || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-        body.innerHTML='<div style="text-align:center;color:#fff;padding:20px"><div style="font-size:42px">⌨️</div><div style="margin:10px 0;font-size:14px;opacity:.85">Tu navegador no soporta escaneo con cámara.<br>Teclea el código de barras:</div><input id="scType" inputmode="numeric" placeholder="Código" style="width:80%;max-width:280px;padding:12px;border-radius:12px;border:none;font-size:18px;text-align:center"><button id="scTypeOk" style="margin:14px auto 0;display:block;border:none;border-radius:12px;padding:12px 22px;background:linear-gradient(150deg,#7A4FE0,#FF5DA2);color:#fff;font-family:Fredoka,sans-serif;font-weight:700;cursor:pointer">Usar código</button></div>';
-        scanOverlay.querySelector("#scTypeOk").onclick=function(){ var v=(scanOverlay.querySelector("#scType").value||"").trim(); if(v) regOnCode(v); };
-        return;
-      }
+      if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ regTypeInput(); return; }
+      var v=document.createElement("video"); v.setAttribute("playsinline",""); v.setAttribute("muted",""); v.muted=true; v.style.cssText="width:100%;height:100%;object-fit:cover"; body.appendChild(v);
+      body.insertAdjacentHTML("beforeend",'<div style="position:absolute;left:10%;right:10%;top:36%;height:24%;border:3px solid rgba(255,255,255,.85);border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.32);pointer-events:none"></div>');
       try{
-        regDetector = regDetector || new window.BarcodeDetector();
-        regStream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:"environment" } } });
-        var v=document.createElement("video"); v.setAttribute("playsinline",""); v.muted=true; v.srcObject=regStream; v.style.cssText="width:100%;height:100%;object-fit:cover";
-        body.appendChild(v);
-        body.insertAdjacentHTML("beforeend",'<div style="position:absolute;left:10%;right:10%;top:38%;height:24%;border:3px solid rgba(255,255,255,.85);border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.35)"></div>');
-        msg.textContent="Apunta al código de barras…";
-        try{ await v.play(); }catch(e){}
-        var busy=false;
-        var loop=async function(){
-          if(!regStream){ return; }
-          if(!busy){ busy=true; try{ var codes=await regDetector.detect(v); if(codes && codes.length){ regOnCode(codes[0].rawValue); busy=false; return; } }catch(e){} busy=false; }
+        if("BarcodeDetector" in window){
+          regDetector = regDetector || new window.BarcodeDetector();
+          regStream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:"environment" } } });
+          v.srcObject=regStream; msg.textContent="Apunta al código de barras…"; try{ await v.play(); }catch(e){}
+          var busy=false;
+          var loop=async function(){ if(!regStream){ return; } if(!busy){ busy=true; try{ var codes=await regDetector.detect(v); if(codes && codes.length){ regOnCode(codes[0].rawValue); busy=false; return; } }catch(e){} busy=false; } regScanRAF=requestAnimationFrame(loop); };
           regScanRAF=requestAnimationFrame(loop);
-        };
-        regScanRAF=requestAnimationFrame(loop);
+        } else {
+          msg.textContent="Cargando escáner…";
+          var ok=await loadZXing();
+          if(!ok || !window.ZXing){ regTypeInput(); return; }
+          msg.textContent="Apunta al código de barras…";
+          regZxingReader=new window.ZXing.BrowserMultiFormatReader();
+          var cb=function(result, err){ if(result){ regOnCode(result.getText()); } };
+          if(typeof regZxingReader.decodeFromConstraints==="function"){ regZxingReader.decodeFromConstraints({ video:{ facingMode:{ ideal:"environment" } } }, v, cb); }
+          else { regZxingReader.decodeFromVideoDevice(undefined, v, cb); }
+        }
       }catch(e){ msg.textContent="No se pudo abrir la cámara (revisa permisos)."; }
     }
     function regOnCode(code){
@@ -218,14 +240,14 @@
       var node=e.target;
       for(var i=0;i<6 && node;i++){
         var t=(node.textContent||"");
-        if(t.length<150 && (/Escanear para vender/.test(t) || /Modo caja registradora/.test(t))){ try{ e.preventDefault(); e.stopPropagation(); if(e.stopImmediatePropagation) e.stopImmediatePropagation(); }catch(_){} regOpen(); return; }
+        if(t.length<150 && (/Escanear para vender/.test(t) || /Modo caja registradora/.test(t) || /Vender varios productos/.test(t) || /Toca o escanea/.test(t))){ try{ e.preventDefault(); e.stopPropagation(); if(e.stopImmediatePropagation) e.stopImmediatePropagation(); }catch(_){} regOpen(); return; }
         if(node.tagName==="BUTTON" && t.length<60 && /agregar\s*producto/i.test(t.replace(/\s+/g," ")) && typeof node.onclick!=="function"){ try{ if(window.APP&&window.APP.openAdd){ window.APP.openAdd(); } }catch(_){} return; }
         node=node.parentElement;
       }
     }, true);
 
     // ===== Auto-actualizador: avisa cuando hay versión nueva publicada (vence el caché) =====
-    var APP_BUILD="20260628-100426";
+    var APP_BUILD="20260628-102831";
     var upd=document.createElement("div");
     upd.style.cssText="position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:2147483001;font:700 12px/1.2 -apple-system,system-ui,sans-serif;padding:9px 15px;border-radius:999px;background:#7A4FE0;color:#fff;box-shadow:0 8px 22px rgba(73,40,120,.35);cursor:pointer;display:none;text-align:center";
     upd.textContent="🔄 Nueva versión · toca para actualizar";
