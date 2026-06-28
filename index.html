@@ -49,7 +49,7 @@
     mtAttach(); setInterval(mtAttach, 2500);
 
     // ===== Auto-actualizador: avisa cuando hay versión nueva publicada (vence el caché) =====
-    var APP_BUILD="20260627-163433";
+    var APP_BUILD="20260627-183807";
     var upd=document.createElement("div");
     upd.style.cssText="position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:2147483001;font:700 12px/1.2 -apple-system,system-ui,sans-serif;padding:9px 15px;border-radius:999px;background:#7A4FE0;color:#fff;box-shadow:0 8px 22px rgba(73,40,120,.35);cursor:pointer;display:none;text-align:center";
     upd.textContent="🔄 Nueva versión · toca para actualizar";
@@ -87,7 +87,10 @@
     }
 
     // ===== Fotos de venta fuera del estado: IndexedDB local + RTDB rainbow/photos =====
-    var PHOTO_PATH="rainbow/photos", _idb=null, _stored={}, _rehyd=false;
+    var PHOTO_PATH="rainbow/photos", _idb=null, _stored={}, _rehyd=false, _photoData={}, _blobOf={};
+    // El motor de plantillas corta los estilos en ';', y un data URL trae ';base64,' → se rompe.
+    // Un blob URL no tiene ';', así que mostramos la foto como blob y guardamos el data URL aparte.
+    function dataUrlToBlobUrl(d){ try{ if(typeof d!=="string"||d.indexOf("data:")!==0) return d; var c=d.indexOf(","); var mime=(d.slice(5,c).split(";")[0])||"image/jpeg"; var bstr=atob(d.slice(c+1)); var n=bstr.length, u=new Uint8Array(n); for(var i=0;i<n;i++)u[i]=bstr.charCodeAt(i); return URL.createObjectURL(new Blob([u],{type:mime})); }catch(e){ return d; } }
     function idbReady(){ if(_idb) return Promise.resolve(_idb); return new Promise(function(res){ var done=false; function fin(v){ if(done) return; done=true; res(v); } try{ var rq=indexedDB.open("rbphotos",1); rq.onupgradeneeded=function(){ try{ rq.result.createObjectStore("photos"); }catch(e){} }; rq.onsuccess=function(){ _idb=rq.result; fin(_idb); }; rq.onerror=function(){ fin(null); }; rq.onblocked=function(){ fin(null); }; }catch(e){ fin(null); } setTimeout(function(){ fin(null); },1500); }); }
     function idbGet(id){ return Promise.race([ idbReady().then(function(d){ return new Promise(function(res){ if(!d) return res(null); try{ var r=d.transaction("photos","readonly").objectStore("photos").get(id); r.onsuccess=function(){ res(r.result||null); }; r.onerror=function(){ res(null); }; }catch(e){ res(null); } }); }), new Promise(function(res){ setTimeout(function(){ res(null); },1500); }) ]); }
     function idbPut(id,val){ idbReady().then(function(d){ if(!d) return; try{ d.transaction("photos","readwrite").objectStore("photos").put(val,id); }catch(e){} }); }
@@ -98,17 +101,32 @@
       var arr; try{ arr=JSON.parse(json); }catch(e){ return json; }
       if(!Array.isArray(arr)) return json;
       var changed=false;
-      for(var i=0;i<arr.length;i++){ var s=arr[i]; if(s && typeof s.photo==="string" && s.photo.indexOf("data:")===0){ putPhoto(s.id, s.photo); arr[i]=Object.assign({},s,{photo:"",ph:1}); changed=true; } }
+      for(var i=0;i<arr.length;i++){ var s=arr[i]; if(!s||typeof s.photo!=="string") continue;
+        var data=null;
+        if(s.photo.indexOf("data:")===0){ data=s.photo; }
+        else if(s.photo.indexOf("blob:")===0 && _photoData[s.id]){ data=_photoData[s.id]; }
+        if(data){ _photoData[s.id]=data; putPhoto(s.id, data); arr[i]=Object.assign({},s,{photo:"",ph:1}); changed=true; }
+        else if(s.photo.indexOf("blob:")===0){ arr[i]=Object.assign({},s,{photo:"",ph:1}); changed=true; }
+      }
       return changed? JSON.stringify(arr) : json;
     }
     function rehydratePhotos(){
-      if(_rehyd || !APP || !APP.state || !Array.isArray(APP.state.sales)) return;
-      var need=APP.state.sales.filter(function(s){ return s && s.ph && (!s.photo || String(s.photo).indexOf("data:")!==0); });
-      if(!need.length) return;
+      if(_rehyd || !APP || !APP.state) return;
+      var sales=Array.isArray(APP.state.sales)?APP.state.sales:[];
+      var need=sales.filter(function(s){ return s && ((s.ph && String(s.photo||"").indexOf("blob:")!==0) || (typeof s.photo==="string" && s.photo.indexOf("data:")===0)); });
+      var pol=APP.state.polaroid;
+      var polFix = pol && typeof pol.photo==="string" && pol.photo.indexOf("data:")===0;
+      if(!need.length && !polFix) return;
       _rehyd=true;
-      Promise.all(need.map(function(s){ return getPhoto(s.id).then(function(p){ return {id:s.id,p:p}; }); })).then(function(rs){
-        var map={}; rs.forEach(function(r){ if(r.p) map[r.id]=r.p; });
-        if(APP&&APP.setState&&Object.keys(map).length){ var ns=APP.state.sales.map(function(s){ return (s&&map[s.id])?Object.assign({},s,{photo:map[s.id]}):s; }); APP.setState({sales:ns}); }
+      Promise.all(need.map(function(s){
+        if(typeof s.photo==="string" && s.photo.indexOf("data:")===0){ return Promise.resolve({id:s.id, d:s.photo}); }
+        return getPhoto(s.id).then(function(p){ return {id:s.id, d:p}; });
+      })).then(function(rs){
+        var map={}; rs.forEach(function(r){ if(r.d){ _photoData[r.id]=r.d; if(!_blobOf[r.id]) _blobOf[r.id]=dataUrlToBlobUrl(r.d); map[r.id]=_blobOf[r.id]; } });
+        var patch={};
+        if(Object.keys(map).length){ patch.sales=APP.state.sales.map(function(s){ return (s&&map[s.id])?Object.assign({},s,{photo:map[s.id]}):s; }); }
+        if(polFix && APP.state.polaroid && typeof APP.state.polaroid.photo==="string" && APP.state.polaroid.photo.indexOf("data:")===0){ patch.polaroid=Object.assign({}, APP.state.polaroid, {photo:dataUrlToBlobUrl(APP.state.polaroid.photo)}); }
+        if(APP&&APP.setState&&Object.keys(patch).length){ APP.setState(patch); }
         _rehyd=false;
       }).catch(function(){ _rehyd=false; });
     }
