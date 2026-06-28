@@ -31,13 +31,57 @@
       if(window.DCLogic){ _hook(window.DCLogic); }
       else{ var _dc; Object.defineProperty(window,"DCLogic",{configurable:true,get:function(){return _dc;},set:function(v){ _dc=v; _hook(v); }}); }
     }catch(e){}
-    var _cp=setInterval(function(){ if(window.DCLogic) _hook(window.DCLogic); if(APP) clearInterval(_cp); },80);
+    var _cp=setInterval(function(){ if(window.DCLogic) _hook(window.DCLogic); if(APP){ try{ patchConfirm(); }catch(e){} clearInterval(_cp); } },80);
     setTimeout(function(){ clearInterval(_cp); },20000);
 
     var pill=document.createElement("div");
     pill.style.cssText="position:fixed;left:10px;bottom:88px;z-index:2147483000;font:600 12px/1 -apple-system,system-ui,sans-serif;padding:7px 11px;border-radius:999px;background:rgba(255,255,255,.93);color:#6B5B7B;box-shadow:0 6px 18px rgba(73,40,120,.18);display:none";
     function attach(){ if(!pill.isConnected && document.documentElement){ document.documentElement.appendChild(pill); } }
     function showPill(txt,opts){ opts=opts||{}; attach(); pill.textContent=txt; pill.style.display="inline-block"; pill.style.cursor=opts.click?"pointer":"default"; pill.onclick=opts.click||null; clearTimeout(pill._t); if(opts.fade){ pill._t=setTimeout(function(){ pill.style.display="none"; },opts.fade); } }
+
+    // ----- Confirmación "¿estás seguro?" + aviso de guardado -----
+    function rbEsc(s){ return String(s==null?"":s).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];}); }
+    function rbToast(msg,sub){ try{ if(window.APP&&window.APP.miniToast){ window.APP.miniToast(msg, sub||""); return; } }catch(e){} showPill(msg+(sub?" · "+sub:""),{fade:2400}); }
+    var _confOv=null;
+    function confirmBox(o){
+      o=o||{};
+      if(!_confOv){ _confOv=document.createElement("div"); _confOv.style.cssText="position:fixed;inset:0;z-index:2147483600;background:rgba(20,8,40,.55);display:none;align-items:center;justify-content:center;padding:24px;font-family:-apple-system,system-ui,sans-serif"; document.documentElement.appendChild(_confOv); }
+      var danger=!!o.danger;
+      _confOv.innerHTML='<div style="background:#fff;border-radius:22px;max-width:340px;width:100%;padding:22px 20px;box-shadow:0 18px 50px rgba(0,0,0,.35);text-align:center"><div style="font-size:40px;margin-bottom:4px">'+(o.emoji||(danger?"🗑️":"✏️"))+'</div><div style="font-family:Fredoka,sans-serif;font-weight:700;font-size:19px;color:#2b1a4a">'+(o.title||"¿Estás seguro?")+'</div><div style="margin:8px 0 18px;color:#6b5b85;font-size:14px;line-height:1.45">'+(o.msg||"")+'</div><div style="display:flex;gap:10px"><button id="cbNo" style="flex:1;border:none;border-radius:14px;padding:13px;background:#eee;color:#555;font-family:Fredoka,sans-serif;font-weight:700;font-size:15px;cursor:pointer">Cancelar</button><button id="cbYes" style="flex:1;border:none;border-radius:14px;padding:13px;background:'+(danger?"linear-gradient(150deg,#FF5DA2,#E0245E)":"linear-gradient(150deg,#7A4FE0,#1FC3B4)")+';color:#fff;font-family:Fredoka,sans-serif;font-weight:700;font-size:15px;cursor:pointer">'+(o.okLabel||"Sí, guardar")+'</button></div></div>';
+      _confOv.style.display="flex";
+      var close=function(){ _confOv.style.display="none"; };
+      _confOv.querySelector("#cbNo").onclick=close;
+      _confOv.querySelector("#cbYes").onclick=function(){ close(); try{ o.onOk&&o.onOk(); }catch(e){} };
+      _confOv.onclick=function(e){ if(e.target===_confOv) close(); };
+    }
+    function patchConfirm(){
+      var proto=window.APP?Object.getPrototypeOf(window.APP):null;
+      if(!proto || proto.__rbConfirmed) return;
+      // Guardar producto: confirma las EDICIONES (modificar precio/datos) y avisa que quedó guardado.
+      var _save=proto.saveProduct;
+      if(typeof _save==="function"){
+        proto.saveProduct=function(){
+          var self=this, sh=self.state&&self.state.sheet;
+          var name=sh?String(sh.name||"").trim():"";
+          if(!sh || !name){ return _save.call(self); }
+          if(sh.type==="edit"){
+            var price=parseFloat(sh.price)||0;
+            confirmBox({ title:"¿Guardar cambios?", emoji:"✏️", okLabel:"Sí, guardar", msg:"<b>"+rbEsc(name)+"</b><br>Precio: <b>$"+price+"</b>", onOk:function(){ _save.call(self); rbToast("Guardado ✓","Sincronizado en la nube"); } });
+            return;
+          }
+          _save.call(self); rbToast("Producto agregado ✓","Sincronizado en la nube");
+        };
+      }
+      // Borrar venta: confirma antes de eliminar (devuelve el stock).
+      var _del=proto.deleteSale;
+      if(typeof _del==="function"){
+        proto.deleteSale=function(saleId){
+          var self=this, sale=(self.state&&self.state.sales||[]).filter(function(s){return s.id===saleId;})[0];
+          confirmBox({ danger:true, title:"¿Borrar esta venta?", emoji:"🗑️", okLabel:"Sí, borrar", msg:(sale?("<b>"+rbEsc(sale.name)+"</b> ×"+(sale.qty||1)+"<br>Se devolverá al inventario."):"Se devolverá al inventario."), onOk:function(){ _del.call(self, saleId); } });
+        };
+      }
+      proto.__rbConfirmed=true;
+    }
 
     // ===== Toggle privado: oculta margen/ganancia (los clientes no deben verlo). Default: oculto =====
     var mtog=document.createElement("button");
@@ -247,7 +291,7 @@
     }, true);
 
     // ===== Auto-actualizador: avisa cuando hay versión nueva publicada (vence el caché) =====
-    var APP_BUILD="20260628-102831";
+    var APP_BUILD="20260628-111513";
     var upd=document.createElement("div");
     upd.style.cssText="position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:2147483001;font:700 12px/1.2 -apple-system,system-ui,sans-serif;padding:9px 15px;border-radius:999px;background:#7A4FE0;color:#fff;box-shadow:0 8px 22px rgba(73,40,120,.35);cursor:pointer;display:none;text-align:center";
     upd.textContent="🔄 Nueva versión · toca para actualizar";
@@ -264,7 +308,7 @@
     checkVer(); setInterval(checkVer, 90000);
     document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="visible") checkVer(); });
 
-    var ready=false, ref=null, firstSnap=true, pendingPush=false, pushTimer=null, liveTimer=null;
+    var ready=false, ref=null, firstSnap=true, syncedOnce=false, pendingPush=false, pushTimer=null, liveTimer=null;
     function sheetOpen(){ var ins=document.querySelectorAll("input,textarea"); for(var i=0;i<ins.length;i++){ var el=ins[i]; if(el.type==="file") continue; var r=el.getBoundingClientRect(); if(r.width>0 && r.height>0 && el.offsetParent!==null) return true; } return false; }
     function liveRefresh(){ if(sheetOpen()){ showPill("🔄 Datos nuevos · toca para actualizar",{click:function(){ location.reload(); }}); clearInterval(liveTimer); liveTimer=setInterval(function(){ if(!sheetOpen()){ clearInterval(liveTimer); location.reload(); } },1200); return; } location.reload(); }
     localStorage.setItem=function(k,v){ if(k==="tpop:sales"){ try{ v=externalizeSales(v); }catch(e){} } _set(k,v); if(typeof k==="string" && k.indexOf("tpop:")===0 && k.indexOf("tpop:_")!==0){ schedulePush(); } };
@@ -376,18 +420,25 @@
       showPill("☁️ Guardando…",{fade:1600});
       ref.set({keys:snapshotObj(), ts:ts, origin:origin}).then(function(){ showPill("☁️ Sincronizado",{fade:1500}); }).catch(function(){ showPill("⚠️ Sin conexión"); });
     }
-    function schedulePush(){ if(!ready){ pendingPush=true; return; } clearTimeout(pushTimer); pushTimer=setTimeout(doPush,600); }
+    function schedulePush(){ if(!ready || !syncedOnce){ pendingPush=true; return; } clearTimeout(pushTimer); pushTimer=setTimeout(doPush,600); }
+    function flushPending(){ if(pendingPush){ pendingPush=false; if(ready&&syncedOnce){ clearTimeout(pushTimer); pushTimer=setTimeout(doPush,600); } } }
 
     function onSnap(snap){
       var v=snap.val();
-      if(!v){ if(localHasSales()) doPush(); firstSnap=false; return; }
+      // Cloud vacía: solo poblar si este dispositivo tiene ventas reales (NUNCA sembrar el catálogo default).
+      if(!v){ syncedOnce=true; if(localHasSales()){ doPush(); } else { pendingPush=false; } firstSnap=false; return; }
       var rts=v.ts||0, lts=localTs();
-      if(v.origin===origin){ if(rts>lts) sset(TS,String(rts)); firstSnap=false; return; }
+      // Mismo origin: normalmente es el eco de nuestro propio push. Pero si la nube es MÁS nueva que nuestro TS
+      // (p.ej. localStorage borrado por iOS y el origin sobrevivió, u otra pestaña), nuestro local está atrasado → adoptar.
+      if(v.origin===origin){ if(rts>lts){ applyRemote(v.keys); sset(TS,String(rts)); pendingPush=false; liveApply(v.keys); } syncedOnce=true; flushPending(); firstSnap=false; return; }
       if(rts>lts){
-        applyRemote(v.keys); sset(TS,String(rts));
+        // La nube es más nueva: adoptarla y DESCARTAR cualquier push pendiente (p.ej. catálogo default tras un borrado de localStorage por iOS) para no pisar la nube.
+        applyRemote(v.keys); sset(TS,String(rts)); pendingPush=false;
         if(liveApply(v.keys)){ showPill("☁️ Actualizado",{fade:1400}); }
-        else { liveRefresh(); return; }
+        else { syncedOnce=true; liveRefresh(); return; }
       } else if(rts<lts){ doPush(); }
+      else { flushPending(); }
+      syncedOnce=true;
       firstSnap=false;
     }
 
@@ -399,7 +450,8 @@
         var db=firebase.database(); ref=db.ref(PATH); ready=true;
         db.ref(".info/connected").on("value",function(s){ if(s.val()===true){ showPill("☁️ Sincronizado",{fade:1500}); } else { showPill("⚠️ Sin conexión"); } });
         ref.on("value",onSnap,function(){ showPill("⚠️ Sin conexión"); });
-        if(pendingPush){ pendingPush=false; schedulePush(); }
+        // Respaldo: si la nube nunca responde (permiso/offline), habilita pushes futuros pero DESCARTA el push de arranque (catálogo default) para no pisar la nube.
+        setTimeout(function(){ if(!syncedOnce){ syncedOnce=true; pendingPush=false; } },6000);
         idbReady(); flushPhotos(); rehydratePhotos();
       }catch(e){ showPill("⚠️ Sync no disponible",{fade:3000}); }
     }
