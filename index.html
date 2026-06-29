@@ -74,6 +74,19 @@
       }
       // Borrar venta ya tiene su propia hoja de confirmación nativa (openDelSale → 'delsale' → deleteSale),
       // así que NO la envolvemos aquí (evita doble "¿estás seguro?").
+      // Reto: "Vende 5 hoy" (imposible al ritmo real ~3-4/semana) → "Vende 3 esta semana" (rolling 7 días).
+      var _ch=proto.challengesList;
+      if(typeof _ch==="function"){
+        proto.challengesList=function(){
+          var defs=_ch.call(this)||[];
+          try{
+            var WK=7*24*60*60*1000, now=Date.now(), goal=3;
+            var weekQty=((this.state&&this.state.sales)||[]).filter(function(s){ return s && (now-(s.ts||0))<=WK; }).reduce(function(a,s){ return a+(s.qty||1); },0);
+            for(var i=0;i<defs.length;i++){ if(defs[i] && defs[i].id==="hoy"){ var cur=Math.min(weekQty,goal); defs[i]=Object.assign({},defs[i],{ icon:"📅", label:"Vende "+goal+" esta semana", cur:cur, goal:goal, pct:Math.min(100,Math.round(cur/goal*100)), done:cur>=goal }); break; } }
+          }catch(e){}
+          return defs;
+        };
+      }
       proto.__rbConfirmed=true;
     }
 
@@ -131,7 +144,7 @@
     pwaInject(); setInterval(pwaInject, 2000);
 
     // ===== Renombra el botón nativo "Escanear para vender" → "Vender varios productos" (deja el subtítulo para la intercepción) =====
-    function rbRelabel(){ try{ var els=document.querySelectorAll("div,span"); for(var i=0;i<els.length;i++){ var el=els[i]; if(el.childElementCount===0){ var x=(el.textContent||"").trim(); if(x==="Escanear para vender"){ el.textContent="🛍️ Vender varios productos"; } else if(x==="Modo caja registradora · ¡cha-ching! 🔔"){ el.textContent="Toca o escanea · suma y cobra 🔔"; } } } }catch(e){} }
+    function rbRelabel(){ try{ var els=document.querySelectorAll("div,span"); for(var i=0;i<els.length;i++){ var el=els[i]; if(el.childElementCount===0){ var x=(el.textContent||"").trim(); if(x==="Escanear para vender"){ el.textContent="🛍️ Vender varios productos"; } else if(x==="Modo caja registradora · ¡cha-ching! 🔔"){ el.textContent="Toca o escanea · suma y cobra 🔔"; } else if(x==="Reto del día"){ el.textContent="Reto de la semana"; } } } }catch(e){} }
     rbRelabel(); setInterval(rbRelabel, 600);
 
     // ===== Caja manual (Vender varios) — abre desde el botón nativo "Escanear para vender", con foto =====
@@ -309,7 +322,7 @@
     }, true);
 
     // ===== Auto-actualizador: avisa cuando hay versión nueva publicada (vence el caché) =====
-    var APP_BUILD="20260629-093236";
+    var APP_BUILD="20260629-094736";
     var upd=document.createElement("div");
     upd.style.cssText="position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:2147483001;font:700 12px/1.2 -apple-system,system-ui,sans-serif;padding:9px 15px;border-radius:999px;background:#7A4FE0;color:#fff;box-shadow:0 8px 22px rgba(73,40,120,.35);cursor:pointer;display:none;text-align:center";
     upd.textContent="🔄 Nueva versión · toca para actualizar";
