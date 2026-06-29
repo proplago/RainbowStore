@@ -77,6 +77,30 @@
       proto.__rbConfirmed=true;
     }
 
+    // ----- Borrar producto individual (con confirmación), inyectado en la hoja de edición -----
+    function deleteProductById(id){
+      var app=window.APP; if(!app||!app.state) return;
+      var prod=(app.state.products||[]).filter(function(p){return p.id===id;})[0];
+      confirmBox({ danger:true, title:"¿Borrar este producto?", emoji:"🗑️", okLabel:"Sí, borrar", msg:(prod?("<b>"+rbEsc(prod.name)+"</b><br>Se quitará del inventario. Las ventas ya hechas se conservan."):"Se quitará del inventario."), onOk:function(){ var prods=(app.state.products||[]).filter(function(p){return p.id!==id;}); app.setState({products:prods, sheet:null, tab:"inv"}, function(){ try{ app.persist(); }catch(e){} }); rbToast("Producto borrado 🗑️","Sincronizado"); } });
+    }
+    function decorateEditSheet(){
+      try{
+        var app=window.APP;
+        if(!app||!app.state||!app.state.sheet||app.state.sheet.type!=="edit"){ return; }
+        if(document.getElementById("rbDelProd")) return;
+        var save=null, bs=document.querySelectorAll("button");
+        for(var i=0;i<bs.length;i++){ if(/guardar cambios/i.test(bs[i].textContent||"")){ save=bs[i]; break; } }
+        if(!save||!save.parentElement) return;
+        var id=app.state.sheet.id;
+        var del=document.createElement("button");
+        del.id="rbDelProd"; del.type="button"; del.textContent="🗑️ Borrar producto";
+        del.style.cssText="width:100%;margin-top:8px;border:none;background:transparent;color:#E0245E;font-family:Fredoka,sans-serif;font-weight:700;font-size:14px;padding:10px;cursor:pointer";
+        del.onclick=function(ev){ try{ev.preventDefault();ev.stopPropagation();}catch(_){} deleteProductById(id); };
+        save.parentElement.appendChild(del);
+      }catch(e){}
+    }
+    setInterval(decorateEditSheet, 350);
+
     // ===== Toggle privado: oculta margen/ganancia (los clientes no deben verlo). Default: oculto =====
     var mtog=document.createElement("button");
     mtog.style.cssText="position:fixed;right:10px;bottom:88px;z-index:2147483000;font:700 12px/1 -apple-system,system-ui,sans-serif;padding:7px 12px;border-radius:999px;border:none;background:rgba(255,255,255,.93);color:#6B5B7B;box-shadow:0 6px 18px rgba(73,40,120,.18);cursor:pointer";
@@ -285,7 +309,7 @@
     }, true);
 
     // ===== Auto-actualizador: avisa cuando hay versión nueva publicada (vence el caché) =====
-    var APP_BUILD="20260628-111631";
+    var APP_BUILD="20260629-093236";
     var upd=document.createElement("div");
     upd.style.cssText="position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:2147483001;font:700 12px/1.2 -apple-system,system-ui,sans-serif;padding:9px 15px;border-radius:999px;background:#7A4FE0;color:#fff;box-shadow:0 8px 22px rgba(73,40,120,.35);cursor:pointer;display:none;text-align:center";
     upd.textContent="🔄 Nueva versión · toca para actualizar";
